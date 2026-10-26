@@ -23,7 +23,7 @@ class POSCashierTerminal:
         """Run interactive CLI menu."""
         while True:
             print("\n========================================")
-            print("         ELUNO POS CASHIER DESK         ")
+            print("          ELUNO POS CASHIER DESK        ")
             print("========================================")
             print("1. Browse Catalog & Stock")
             print("2. Search Customer by Phone")
@@ -75,7 +75,7 @@ class POSCashierTerminal:
             print(f"Customer search failed: {e}")
 
     def checkout_flow(self):
-        """Process end-to-end sale."""
+        """Process end-to-end sale with live product & payment selection."""
         if not self.location_id:
             print("Error: Store location not initialized.")
             return
@@ -87,15 +87,38 @@ class POSCashierTerminal:
                 print("No products available.")
                 return
 
-            # Select first product variant for sale
-            product = products[0]
-            variant = product["variants"][0]
-            gross_price = variant["price"]
-            
-            print(f"Selected Item: {product['title']} - {variant['title']} (₹{gross_price})")
+            # 1. Live Product Selection
+            print("\nAvailable Products:")
+            selectable_items = []
+            idx = 1
+            for p in products:
+                for v in p.get("variants", []):
+                    selectable_items.append({"product": p, "variant": v})
+                    print(f"[{idx}] {p['title']} - {v['title']} (₹{v['price']})")
+                    idx += 1
 
-            # Optional customer attachment
-            phone = input("Enter customer phone for loyalty/records (leave blank for guest): ").strip()
+            choice = input(f"\nSelect product number (1-{len(selectable_items)}) [Default 1]: ").strip()
+            selected_idx = int(choice) - 1 if choice.isdigit() and 1 <= int(choice) <= len(selectable_items) else 0
+            
+            selected_item = selectable_items[selected_idx]
+            product = selected_item["product"]
+            variant = selected_item["variant"]
+            gross_price = variant["price"]
+
+            print(f"\nSelected: {product['title']} - {variant['title']} (₹{gross_price})")
+
+            # 2. Live Payment Method Selection
+            print("\nSelect Payment Method:")
+            print("1. UPI")
+            print("2. Credit / Debit Card")
+            print("3. Cash")
+            pm_choice = input("Enter option (1-3) [Default 1]: ").strip()
+            
+            method_map = {"1": "upi", "2": "card", "3": "cash"}
+            payment_method = method_map.get(pm_choice, "upi")
+
+            # 3. Optional Customer Attachment
+            phone = input("\nEnter customer phone for loyalty/records (leave blank for guest): ").strip()
             customer_id = None
             if phone:
                 cust_res = self.client.search_customers(phone)
@@ -104,19 +127,23 @@ class POSCashierTerminal:
                     customer_id = cust_list[0]["id"]
                     print(f"Attached Customer ID: {customer_id}")
 
-            # Terminal Payment (convert price to paise integer)
+            # 4. Terminal Payment Processing
             amount_paise = int(float(gross_price) * 100)
             order_ref = f"POS-ORD-{amount_paise}"
 
-            print(f"Processing UPI payment of ₹{gross_price}...")
-            charge_res = self.client.create_terminal_charge(amount_paise=amount_paise, order_ref=order_ref, method="upi")
+            print(f"\nProcessing {payment_method.upper()} payment of ₹{gross_price}...")
+            charge_res = self.client.create_terminal_charge(
+                amount_paise=amount_paise, 
+                order_ref=order_ref, 
+                method=payment_method
+            )
             charge_id = charge_res.get("charge_id")
             print(f"Payment Captured! Charge ID: {charge_id}")
 
-            # Calculate GST Tax Lines using calculator.py
+            # 5. Calculate GST Tax Lines using calculator.py
             tax_breakdown = calculate_gst(gross_price)
 
-            # Build Shopify-compliant Order Payload
+            # 6. Build Shopify-compliant Order Payload
             order_data = {
                 "taxes_included": True,
                 "line_items": [
@@ -134,7 +161,8 @@ class POSCashierTerminal:
                     {
                         "kind": "sale",
                         "status": "success",
-                        "amount": gross_price
+                        "amount": gross_price,
+                        "gateway": payment_method
                     }
                 ],
                 "inventory_behaviour": "decrement_obeying_policy",
