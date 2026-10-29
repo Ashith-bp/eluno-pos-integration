@@ -13,26 +13,32 @@ def get_client():
 
 client = get_client()
 
-# Helper loader for products.json fallback
-def load_products_json():
+# Helper loaders for local JSON fallbacks on Cloud deployment
+def load_json_file(filename):
     possible_paths = [
-        "products.json",
-        "data/products.json",
-        "mock-apis/products.json",
-        "../products.json"
+        filename,
+        f"data/{filename}",
+        f"mock-apis/{filename}",
+        f"../{filename}"
     ]
     for path in possible_paths:
         if os.path.exists(path):
             try:
                 with open(path, "r") as f:
                     data = json.load(f)
-                    return data.get("products", data) if isinstance(data, dict) else data
+                    if isinstance(data, dict):
+                        # Find the first list value or key match
+                        for key in ["products", "customers", "offers", "orders"]:
+                            if key in data and isinstance(data[key], list):
+                                return data[key]
+                        # Return first list found in dict values
+                        for val in data.values():
+                            if isinstance(val, list):
+                                return val
+                    return data if isinstance(data, list) else []
             except:
                 pass
-    return [
-        {"id": "prod_frame_01", "title": "Designer Optical Frame", "product_type": "Frame", "variants": [{"id": "var_f1", "title": "Black / Standard", "price": "2999.00", "sku": "FRM-BLK-01"}]},
-        {"id": "prod_lens_01", "title": "Prescription Lens Matrix", "product_type": "Lens", "variants": [{"id": "var_l1", "title": "Anti-Glare Single Vision", "price": "1499.00", "sku": "LNS-AG-01"}]}
-    ]
+    return []
 
 # Initialize session state data
 if "location_id" not in st.session_state:
@@ -43,14 +49,11 @@ if "location_id" not in st.session_state:
         st.session_state.location_id = "loc_indiranagar_01"
 
 if "offers" not in st.session_state:
-    try:
-        if os.path.exists("offers.json"):
-            with open("offers.json", "r") as f:
-                st.session_state.offers = json.load(f).get("offers", [])
-        else:
-            st.session_state.offers = [{"id": "OFFER_FLAT10", "title": "10% Off Storewide", "type": "percentage", "value": 10.0}]
-    except:
-        st.session_state.offers = []
+    offers_data = load_json_file("offers.json")
+    if offers_data:
+        st.session_state.offers = offers_data
+    else:
+        st.session_state.offers = [{"id": "OFFER_FLAT10", "title": "10% Off Storewide", "type": "percentage", "value": 10.0}]
 
 st.title("👓 Eluno POS Cashier Terminal (Store Front)")
 st.sidebar.title("Navigation")
@@ -69,7 +72,7 @@ if menu == "Product Catalog & Stock":
         
     if not products:
         st.warning("Running on cloud deployment (Loaded full catalog from local products.json).")
-        products = load_products_json()
+        products = load_json_file("products.json")
         
     for p in products:
         with st.expander(f"[{p.get('product_type', 'Item')}] {p['title']} (ID: {p['id']})"):
@@ -89,16 +92,10 @@ elif menu == "Customer & Prescription Lookup":
             except:
                 pass
             
-            # Offline cloud fallback customer data
             if not customers:
-                customers = [
-                    {
-                        "id": "cust_1001",
-                        "first_name": "Ashith",
-                        "last_name": "Gowda",
-                        "phone": phone
-                    }
-                ]
+                all_custs = load_json_file("customers.json")
+                clean_phone = phone.strip().replace(" ", "")
+                customers = [c for c in all_custs if clean_phone in str(c.get("phone", "")).replace(" ", "")]
             
             if customers:
                 c = customers[0]
@@ -121,6 +118,7 @@ elif menu == "Customer & Prescription Lookup":
                 st.warning("No customer found with that phone number.")
         else:
             st.error("Please enter a phone number.")
+
 # 3. CHECKOUT FLOW
 elif menu == "New Sale Checkout":
     st.header("🛒 POS Checkout Terminal")
@@ -133,6 +131,11 @@ elif menu == "New Sale Checkout":
         try:
             cust_res = client.search_customers(phone)
             cust_list = cust_res.get("customers", [])
+            if not cust_list:
+                all_custs = load_json_file("customers.json")
+                clean_phone = phone.strip().replace(" ", "")
+                cust_list = [c for c in all_custs if clean_phone in str(c.get("phone", "")).replace(" ", "")]
+            
             if cust_list:
                 customer_id = cust_list[0]["id"]
                 prescription = {"id": "rx_1001", "sphere": "-1.50", "cylinder": "-0.50", "axis": "180", "add": "+1.50", "valid_until": "2027-12-31"}
@@ -149,7 +152,7 @@ elif menu == "New Sale Checkout":
             pass
             
         if not products:
-            products = load_products_json()
+            products = load_json_file("products.json")
         
         frames = [p for p in products if p.get("product_type") == "Frame" or "Frame" in p.get("title")]
         if not frames: frames = products[:1]
@@ -283,22 +286,7 @@ elif menu == "Day-End Z-Report":
                 pass
 
             if not orders:
-                possible_paths = [
-                    "orders_sample.json",
-                    "data/orders_sample.json",
-                    "mock-apis/orders_sample.json",
-                    "../orders_sample.json"
-                ]
-                for path in possible_paths:
-                    if os.path.exists(path):
-                        try:
-                            with open(path, "r") as f:
-                                data = json.load(f)
-                                orders = data.get("orders", data) if isinstance(data, dict) else data
-                                if orders: 
-                                    break
-                        except:
-                            pass
+                orders = load_json_file("orders_sample.json")
 
             matched = [o for o in orders if report_date in str(o.get("created_at", ""))]
 
