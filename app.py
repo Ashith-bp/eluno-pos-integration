@@ -38,28 +38,22 @@ menu = st.sidebar.radio("Go to", ["Product Catalog & Stock", "Customer & Prescri
 # 1. CATALOG
 if menu == "Product Catalog & Stock":
     st.header("📦 Store Product Catalog & Variants")
-    products = []
     try:
-        res = client.get_products()
-        if res and isinstance(res, dict):
-            products = res.get("products", [])
-    except Exception:
-        pass
+        products = client.get_products().get("products", [])
+        if not products:
+            st.warning("No products fetched from server. Showing offline sample catalog.")
+            products = [
+                {"id": "prod_frame_01", "title": "Designer Optical Frame", "product_type": "Frame", "variants": [{"id": "var_f1", "title": "Black / Standard", "price": "2999.00", "sku": "FRM-BLK-01"}]},
+                {"id": "prod_lens_01", "title": "Prescription Lens Matrix", "product_type": "Lens", "variants": [{"id": "var_l1", "title": "Anti-Glare Single Vision", "price": "1499.00", "sku": "LNS-AG-01"}]}
+            ]
         
-    if not products:
-        st.warning("Running on cloud deployment (offline fallback catalog active).")
-        products = [
-            {"id": "prod_frame_01", "title": "Designer Optical Frame", "product_type": "Frame", "variants": [{"id": "var_f1", "title": "Black / Standard", "price": "2999.00", "sku": "FRM-BLK-01"}]},
-            {"id": "prod_lens_01", "title": "Prescription Lens Matrix", "product_type": "Lens", "variants": [{"id": "var_l1", "title": "Anti-Glare Single Vision", "price": "1499.00", "sku": "LNS-AG-01"}]},
-            {"id": "prod_frame_02", "title": "Classic Tortoiseshell Frame", "product_type": "Frame", "variants": [{"id": "var_f2", "title": "Brown / Classic", "price": "2499.00", "sku": "FRM-BRW-02"}]},
-            {"id": "prod_lens_02", "title": "Blue-Blocker Progressive Lens", "product_type": "Lens", "variants": [{"id": "var_l2", "title": "Blue Control Progressive", "price": "2999.00", "sku": "LNS-BP-02"}]}
-        ]
-    
-    for p in products:
-        with st.expander(f"[{p.get('product_type', 'Item')}] {p['title']} (ID: {p['id']})"):
-            for v in p.get("variants", []):
-                st.write(f"- **Variant:** {v['title']} | **Price:** ₹{v['price']} | **SKU:** {v.get('sku', 'N/A')}")
-                
+        for p in products:
+            with st.expander(f"[{p.get('product_type', 'Item')}] {p['title']} (ID: {p['id']})"):
+                for v in p.get("variants", []):
+                    st.write(f"- **Variant:** {v['title']} | **Price:** ₹{v['price']} | **SKU:** {v.get('sku', 'N/A')}")
+    except Exception as e:
+        st.error(f"Failed to load catalog: {e}")
+
 # 2. CUSTOMER & RX LOOKUP
 elif menu == "Customer & Prescription Lookup":
     st.header("👤 Customer Lookup & Prescription Verification")
