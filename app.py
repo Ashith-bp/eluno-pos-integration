@@ -50,7 +50,9 @@ if menu == "Product Catalog & Stock":
         st.warning("Running on cloud deployment (offline fallback catalog active).")
         products = [
             {"id": "prod_frame_01", "title": "Designer Optical Frame", "product_type": "Frame", "variants": [{"id": "var_f1", "title": "Black / Standard", "price": "2999.00", "sku": "FRM-BLK-01"}]},
-            {"id": "prod_lens_01", "title": "Prescription Lens Matrix", "product_type": "Lens", "variants": [{"id": "var_l1", "title": "Anti-Glare Single Vision", "price": "1499.00", "sku": "LNS-AG-01"}]}
+            {"id": "prod_lens_01", "title": "Prescription Lens Matrix", "product_type": "Lens", "variants": [{"id": "var_l1", "title": "Anti-Glare Single Vision", "price": "1499.00", "sku": "LNS-AG-01"}]},
+            {"id": "prod_frame_02", "title": "Classic Tortoiseshell Frame", "product_type": "Frame", "variants": [{"id": "var_f2", "title": "Brown / Classic", "price": "2499.00", "sku": "FRM-BRW-02"}]},
+            {"id": "prod_lens_02", "title": "Blue-Blocker Progressive Lens", "product_type": "Lens", "variants": [{"id": "var_l2", "title": "Blue Control Progressive", "price": "2999.00", "sku": "LNS-BP-02"}]}
         ]
     
     for p in products:
