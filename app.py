@@ -209,7 +209,7 @@ elif menu == "New Sale Checkout":
         gross_subtotal = frame_price + lens_price
 
         # Offer selection
-        offer_options = ["None"] + [o.get('title', 'Offer') for o in st.session_state.offers]
+        offer_options = ["None"] + [o.get('title', 'Offer') for o in st.session_state.offers]]
         chosen_offer = st.selectbox("Apply Promotional Offer", offer_options)
         
         discount_amount = 0.0
