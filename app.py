@@ -125,6 +125,36 @@ if app_mode == "Cashier Checkout":
         if st.session_state.current_customer:
             c_active = st.session_state.current_customer
             st.info(f"✅ **Active Customer:** {c_active.get('first_name')} {c_active.get('last_name')} ({c_active.get('phone')})")
+            
+            # --- PRESCRIPTION LOOKUP & DISPLAY INTEGRATION ---
+            cust_phone = str(c_active.get('phone', '')).strip()
+            prescriptions = client._get("/admin/api/2026-10/prescriptions.json")
+            
+            matched_rx = None
+            if prescriptions and isinstance(prescriptions, list):
+                for rx in prescriptions:
+                    if isinstance(rx, dict) and str(rx.get('phone', '')).strip() == cust_phone:
+                        matched_rx = rx
+                        break
+            
+            if matched_rx:
+                st.markdown("### 👓 Active Prescription Details")
+                st.success(f"Prescription ID: `{matched_rx.get('rx_id')}` | Valid Until: {matched_rx.get('valid_until')}")
+                
+                rx_col1, rx_col2 = st.columns(2)
+                with rx_col1:
+                    st.markdown("**Right Eye (OD)**")
+                    od = matched_rx.get('od', {})
+                    st.write(f"Sph: `{od.get('sph')}` | Cyl: `{od.get('cyl')}` | Axis: `{od.get('axis')}`° | Add: `{od.get('add')}`")
+                with rx_col2:
+                    st.markdown("**Left Eye (OS)**")
+                    os = matched_rx.get('os', {})
+                    st.write(f"Sph: `{os.get('sph')}` | Cyl: `{os.get('cyl')}` | Axis: `{os.get('axis')}`° | Add: `{os.get('add')}`")
+                
+                pd = matched_rx.get('pd', {})
+                st.caption(f"Pupillary Distance (PD) Binocular: {pd.get('binocular')} mm | Notes: {matched_rx.get('notes', 'None')}")
+            else:
+                st.warning("⚠️ No prescription record found matching this customer's phone number in `prescriptions.json`.")
 
         st.subheader("2. Add Products to Cart")
         products = client._get("/admin/api/2026-10/products.json")
@@ -282,7 +312,6 @@ elif app_mode == "Refunds & Returns":
 elif app_mode == "Day-End Z-Report":
     st.title("📊 Day-End Z-Report & Reconciliation")
     
-    # Manual Date Selector (Defaults to October 6, 2026 where sample order #1012 exists)
     selected_report_date = st.date_input("Select Report Date", value=date(2026, 10, 6))
     formatted_date_str = selected_report_date.strftime("%B %d, %Y")
     
@@ -305,7 +334,6 @@ elif app_mode == "Day-End Z-Report":
                 except Exception:
                     pass
 
-    # If orders match the exact date, use exact sum. Otherwise show 0 or default shift numbers.
     if order_count > 0:
         total_cash_sales = round(matched_orders_total * 0.50, 2)
         total_digital_sales = round(matched_orders_total * 0.50, 2)
