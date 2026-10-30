@@ -68,7 +68,7 @@ if "cart" not in st.session_state:
 if "current_customer" not in st.session_state:
     st.session_state.current_customer = None
 
-# --- SIDEBAR NAVIGATION ---
+# --- SIDEBAR NAVIGATION (SLEEK DROPDOWN) ---
 st.sidebar.title("👓 Eluno POS Terminal")
 st.sidebar.caption("Retail Optical Cashier System")
 if SERVER_ACTIVE:
@@ -76,7 +76,11 @@ if SERVER_ACTIVE:
 else:
     st.sidebar.warning("☁️ Cloud Mode: Local Fallbacks Active")
 
-app_mode = st.sidebar.radio("Navigation", ["Cashier Checkout", "Catalog & Stock", "Refunds & Returns", "Day-End Z-Report"])
+st.sidebar.markdown("---")
+app_mode = st.sidebar.selectbox(
+    "📌 Terminal Navigation", 
+    ["Cashier Checkout", "Catalog & Stock", "Refunds & Returns", "Day-End Z-Report"]
+)
 
 # ==========================================
 # 1. CASHIER CHECKOUT TAB
