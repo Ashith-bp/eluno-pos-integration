@@ -295,20 +295,48 @@ elif app_mode == "Refunds & Returns":
                 if is_returnable:
                     total_refund_calc += item_price
 
-            st.info(f"**Auto-Calculated Refund Total:** ₹{total_refund_calc:.2f}")
-            reason = st.selectbox("Reason for Refund", ["Customer Dissatisfaction", "Frame Defect", "Wrong Size / Style", "Warranty Remake"])
+            st.info(f"**Auto-Calculated Refund Total from Items:** ₹{total_refund_calc:.2f}")
+            
+            # --- CUSTOM REASON FOR REFUND & MANUAL AMOUNT OVERRIDE ---
+            reason_options = ["Customer Dissatisfaction", "Frame Defect", "Wrong Size / Style", "Warranty Remake", "Custom / Other Reason"]
+            selected_reason = st.selectbox("Reason for Refund", options=reason_options)
+            
+            custom_reason_text = ""
+            if selected_reason == "Custom / Other Reason":
+                custom_reason_text = st.text_input("Enter Custom Reason for Refund:")
+
+            use_manual_amount = st.checkbox("Override with Custom Manual Refund Amount?")
+            final_refund_amount = total_refund_calc
+
+            if use_manual_amount:
+                final_refund_amount = st.number_input("Enter Custom Manual Refund Amount (₹):", min_value=0.0, value=total_refund_calc, step=50.0)
+                st.warning(f"⚠️ Manual Override Active: Processing custom refund amount of ₹{final_refund_amount:.2f}")
 
             if st.button("Confirm Itemized Refund"):
-                if total_refund_calc > 0:
-                    st.success(f"Successfully processed refund of ₹{total_refund_calc:.2f}. Frames restocked, custom lenses excluded from inventory.")
+                effective_reason = custom_reason_text if selected_reason == "Custom / Other Reason" and custom_reason_text else selected_reason
+                if final_refund_amount > 0:
+                    st.success(f"Successfully processed refund of ₹{final_refund_amount:.2f} | Reason: {effective_reason}. Frames restocked, custom lenses excluded from inventory.")
                     st.balloons()
                 else:
-                    st.error("Please select at least one item to return.")
+                    st.error("Refund amount must be greater than zero.")
         else:
             st.warning("Order ID not found in live ledger. Enter manual fallback details:")
+            fallback_reason_options = ["Customer Dissatisfaction", "Frame Defect", "Wrong Size / Style", "Warranty Remake", "Custom / Other Reason"]
+            sel_fallback_reason = st.selectbox("Reason for Refund", options=fallback_reason_options, key="fb_reason")
+            
+            fb_custom_text = ""
+            if sel_fallback_reason == "Custom / Other Reason":
+                fb_custom_text = st.text_input("Enter Custom Reason for Refund:", key="fb_cust_txt")
+
             manual_amt = st.number_input("Refund Amount in INR", min_value=0.0, value=0.0)
+            
             if st.button("Process Manual Refund"):
-                st.success(f"Processed manual refund of ₹{manual_amt:.2f}")
+                effective_fb_reason = fb_custom_text if sel_fallback_reason == "Custom / Other Reason" and fb_custom_text else sel_fallback_reason
+                if manual_amt > 0:
+                    st.success(f"Processed manual refund of ₹{manual_amt:.2f} | Reason: {effective_fb_reason}")
+                    st.balloons()
+                else:
+                    st.error("Please enter a valid manual refund amount.")
 
 # ==========================================
 # 4. DAY-END Z-REPORT TAB
