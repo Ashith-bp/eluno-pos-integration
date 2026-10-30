@@ -283,26 +283,44 @@ elif app_mode == "Day-End Z-Report":
     st.title("📊 Day-End Z-Report & Reconciliation")
     
     # Manual Date Selector
-    selected_report_date = st.date_input("Select Report Date", value=date.today())
+    selected_report_date = st.date_input("Select Report Date", value=date(2026, 10, 6)) # Default to sample order date
     formatted_date_str = selected_report_date.strftime("%B %d, %Y")
     
     st.caption(f"Active Reporting Date: {formatted_date_str}")
 
+    # Fetch orders and dynamically filter by selected date
     orders = client._get("/admin/api/2026-10/orders.json")
     
-    total_cash_sales = 14250.00
-    total_digital_sales = 38900.00
+    matched_orders_total = 0.0
+    order_count = 0
     
-    if isinstance(orders, list) and len(orders) > 0:
-        calculated_sales = sum([float(o.get('total_price', 0)) for o in orders if isinstance(o, dict)])
-        if calculated_sales > 0:
-            total_cash_sales = round(calculated_sales * 0.35, 2)
-            total_digital_sales = round(calculated_sales * 0.65, 2)
+    if isinstance(orders, list):
+        for o in orders:
+            if isinstance(o, dict):
+                created_at_str = o.get("created_at", "")
+                try:
+                    order_date = datetime.fromisoformat(created_at_str).date()
+                    if order_date == selected_report_date:
+                        matched_orders_total += float(o.get("total_price", 0.0))
+                        order_count += 1
+                except Exception:
+                    pass
+
+    # If orders match the exact date, use them; otherwise provide a simulated split for demo dates
+    if order_count > 0:
+        total_cash_sales = round(matched_orders_total * 0.40, 2)
+        total_digital_sales = round(matched_orders_total * 0.60, 2)
+    else:
+        # Fallback demo numbers if date doesn't have orders in sample file
+        total_cash_sales = 14250.00
+        total_digital_sales = 38900.00
 
     opening_float = 5000.00
     expected_drawer_cash = opening_float + total_cash_sales
 
     st.write("### Store Shift Summary")
+    st.info(f"Found **{order_count}** orders recorded on {formatted_date_str}.")
+    
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Opening Float", f"₹{opening_float:,.2f}")
     col2.metric("Total Cash Sales", f"₹{total_cash_sales:,.2f}")
