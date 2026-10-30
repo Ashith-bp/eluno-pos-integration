@@ -250,13 +250,11 @@ if app_mode == "Cashier Checkout":
 elif app_mode == "Catalog & Stock":
     st.title("📦 Product Catalog & Inventory Management")
     
-    # Filter controls bar
     f_col1, f_col2 = st.columns([2, 1])
     search_query = f_col1.text_input("🔍 Search products by name, brand, or SKU:", placeholder="e.g. Ray-Ban, Aviator, Lens")
     
     products = client._get("/admin/api/2026-10/products.json")
     
-    # Extract unique product types for filtering category dropdown
     categories = ["All Categories"]
     if isinstance(products, list):
         for p in products:
@@ -269,7 +267,6 @@ elif app_mode == "Catalog & Stock":
     
     st.markdown("---")
     
-    # Filter products based on search query and category
     filtered_products = []
     if isinstance(products, list):
         for p in products:
@@ -288,7 +285,6 @@ elif app_mode == "Catalog & Stock":
     if not filtered_products:
         st.info("No products found matching your search criteria.")
     else:
-        # Display products in a professional e-commerce grid (3 columns per row)
         cols_per_row = 3
         for i in range(0, len(filtered_products), cols_per_row):
             row_cols = st.columns(cols_per_row)
@@ -300,27 +296,28 @@ elif app_mode == "Catalog & Stock":
                     variant = variants[0] if variants else {}
                     price = float(variant.get('price', 0.0))
                     sku = variant.get('sku', 'N/A')
-                    status = p.get('status', 'ACTIVE')
+                    status = str(p.get('status', 'active')).lower()
                     vendor = p.get('vendor', 'Eluno Optical')
                     ptype = p.get('product_type', 'Frame')
                     
+                    # Check stock availability safely from variants or status
+                    inv_qty = variant.get('inventory_quantity', 1)
+                    is_in_stock = (status == 'active' and inv_qty > 0)
+                    
                     with row_cols[j]:
-                        # Professional card container
                         with st.container(border=True):
                             st.markdown(f"#### {p.get('title', 'Product')}")
                             st.caption(f"**Brand/Vendor:** {vendor} | **Type:** {ptype}")
                             
-                            # Price and stock indicator badge look
                             p_col1, p_col2 = st.columns(2)
                             p_col1.markdown(f"### **₹{price:,.2f}**")
-                            if status == 'ACTIVE':
+                            if is_in_stock:
                                 p_col2.markdown("🟢 **In Stock**")
                             else:
                                 p_col2.markdown("🔴 **Out of Stock**")
                                 
                             st.text(f"SKU: {sku}")
                             
-                            # Quick action button inside card
                             if st.button("Quick Add to Cart", key=f"grid_add_{p.get('id', idx)}"):
                                 st.session_state.cart.append({
                                     "title": p.get('title'),
@@ -364,7 +361,6 @@ elif app_mode == "Refunds & Returns":
 
             st.info(f"**Auto-Calculated Refund Total from Items:** ₹{total_refund_calc:.2f}")
             
-            # --- CUSTOM REASON FOR REFUND & MANUAL AMOUNT OVERRIDE ---
             reason_options = ["Customer Dissatisfaction", "Frame Defect", "Wrong Size / Style", "Warranty Remake", "Custom / Other Reason"]
             selected_reason = st.selectbox("Reason for Refund", options=reason_options)
             
@@ -414,7 +410,7 @@ elif app_mode == "Day-End Z-Report":
     selected_report_date = st.date_input("Select Report Date", value=date(2026, 10, 6))
     formatted_date_str = selected_report_date.strftime("%B %d, %Y")
     
-    st.caption(f"Active ReportingDate: {formatted_date_str}")
+    st.caption(f"Active Reporting Date: {formatted_date_str}")
 
     orders = client._get("/admin/api/2026-10/orders.json")
     
