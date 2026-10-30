@@ -164,36 +164,47 @@ if app_mode == "Cashier Checkout":
 
             st.divider()
 
+            # --- DISCOUNT & OFFERS SLAB (WITH CUSTOM INPUT) ---
             st.subheader("🎟️ Offers & Discounts")
             
             offer_choices = {
-                "🪔 Diwali Special: 10% Off Storewide (DIWALI10)": {"percentage": 10.0, "code": "DIWALI10"},
-                "⭐ VIP Season Discount: 20% Off (VIP20)": {"percentage": 20.0, "code": "VIP20"},
-                "🏷️ Flat ₹500 Store Special (FLAT500)": {"flat_amount": 500.0, "code": "FLAT500"},
+                "🪔 Diwali Special: 10% Off Storewide (DIWALI10)": {"type": "percentage", "val": 10.0},
+                "⭐ VIP Season Discount: 20% Off (VIP20)": {"type": "percentage", "val": 20.0},
+                "🏷️ Flat ₹500 Store Special (FLAT500)": {"type": "flat", "val": 500.0},
+                "✏️ Enter Custom Discount": {"type": "custom"},
                 "No Discount": None
             }
             
             selected_offer_label = st.selectbox("Apply Active Offer Slab", options=list(offer_choices.keys()))
             
             discount_val = 0.0
-            if selected_offer_label and selected_offer_label != "No Discount":
-                selected_offer = offer_choices[selected_offer_label]
-                pct = float(selected_offer.get('percentage', 0.0))
-                if pct > 0:
-                    discount_val = subtotal * (pct / 100.0)
-                elif 'flat_amount' in selected_offer:
-                    discount_val = float(selected_offer.get('flat_amount', 0.0))
+            selected_offer = offer_choices[selected_offer_label]
+
+            if selected_offer:
+                if selected_offer["type"] == "percentage":
+                    discount_val = subtotal * (selected_offer["val"] / 100.0)
+                elif selected_offer["type"] == "flat":
+                    discount_val = selected_offer["val"]
+                elif selected_offer["type"] == "custom":
+                    custom_mode_type = st.radio("Custom Discount Type", ["Percentage (%)", "Flat Amount (₹)"], horizontal=True)
+                    if custom_mode_type == "Percentage (%)":
+                        custom_pct = st.number_input("Custom Percentage (%)", min_value=0.0, max_value=100.0, value=5.0, step=1.0)
+                        discount_val = subtotal * (custom_pct / 100.0)
+                    else:
+                        custom_amt = st.number_input("Custom Flat Amount (₹)", min_value=0.0, max_value=subtotal, value=100.0, step=50.0)
+                        discount_val = custom_amt
 
             final_payable = max(0.0, subtotal - discount_val)
 
             st.divider()
             
+            # Optical Tax Calculation (Inclusive GST split)
             tax_amount = final_payable * 0.18 / 1.18 
             net_taxable = final_payable - tax_amount
             
             st.markdown(f"**Subtotal (MRP Incl. GST):** ₹{subtotal:.2f}")
             if discount_val > 0:
-                st.markdown(f"**Discount Applied ({selected_offer_label.split(':')[0]}):** -₹{discount_val:.2f}")
+                st.markdown(f"**Discount Applied:** -₹{discount_val:.2f}")
             st.markdown(f"**Net Taxable Value:** ₹{net_taxable:.2f}")
             st.markdown(f"**GST (CGST + SGST):** ₹{tax_amount:.2f}")
             st.markdown(f"### **Total Amount Payable: ₹{final_payable:.2f}**")
@@ -282,7 +293,6 @@ elif app_mode == "Refunds & Returns":
 elif app_mode == "Day-End Z-Report":
     st.title("📊 Day-End Z-Report & Reconciliation")
     
-    # Manual Date Selector (Defaults to October 6, 2026 where sample order #1012 exists)
     selected_report_date = st.date_input("Select Report Date", value=date(2026, 10, 6))
     formatted_date_str = selected_report_date.strftime("%B %d, %Y")
     
@@ -305,7 +315,6 @@ elif app_mode == "Day-End Z-Report":
                 except Exception:
                     pass
 
-    # If orders match the exact date, use exact sum. Otherwise show 0 or default shift numbers.
     if order_count > 0:
         total_cash_sales = round(matched_orders_total * 0.50, 2)
         total_digital_sales = round(matched_orders_total * 0.50, 2)
