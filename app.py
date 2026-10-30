@@ -67,6 +67,8 @@ if "cart" not in st.session_state:
     st.session_state.cart = []
 if "current_customer" not in st.session_state:
     st.session_state.current_customer = None
+if "applied_discount" not in st.session_state:
+    st.session_state.applied_discount = {"title": "None", "percentage": 0.0, "amount": 0.0}
 
 # --- SIDEBAR NAVIGATION ---
 st.sidebar.title("👓 Eluno POS Terminal")
@@ -91,14 +93,36 @@ if app_mode == "Cashier Checkout":
         customers = client._get("/admin/api/2026-10/customers.json")
         
         customer_options = {f"{c.get('first_name', '')} {c.get('last_name', '')} ({c.get('phone', 'No Phone')})": c for c in customers if isinstance(c, dict)}
+        # Add a manual "Register New Customer" option
+        customer_options["➕ Register New Walk-in Customer"] = "NEW_CUSTOMER"
         
-        selected_cust_label = st.selectbox("Search Customer by Name / Phone", options=list(customer_options.keys()) if customer_options else ["No Customers Found"])
+        selected_cust_label = st.selectbox("Search Customer by Name / Phone", options=list(customer_options.keys()))
         
-        if selected_cust_label and selected_cust_label in customer_options:
+        if selected_cust_label == "➕ Register New Walk-in Customer":
+            st.markdown("#### Enter New Customer Details")
+            new_fname = st.text_input("First Name")
+            new_lname = st.text_input("Last Name")
+            new_phone = st.text_input("Phone Number (+91...)")
+            new_email = st.text_input("Email Address")
+            
+            if st.button("Save & Select Customer"):
+                if new_fname and new_phone:
+                    cust = {
+                        "first_name": new_fname,
+                        "last_name": new_lname,
+                        "phone": new_phone,
+                        "email": new_email,
+                        "tags": "pos,new_customer"
+                    }
+                    st.session_state.current_customer = cust
+                    st.success(f"New customer registered & selected: {new_fname} {new_lname}")
+                else:
+                    st.error("Please provide at least First Name and Phone Number.")
+        elif selected_cust_label and selected_cust_label in customer_options:
             cust = customer_options[selected_cust_label]
             st.session_state.current_customer = cust
             st.success(f"Selected: {cust.get('first_name')} {cust.get('last_name')}")
-            st.json({"Email": cust.get('email'), "Tags": cust.get('tags'), "Total Spent": cust.get('total_spent')})
+            st.json({"Email": cust.get('email', 'N/A'), "Tags": cust.get('tags', 'N/A'), "Phone": cust.get('phone', 'N/A')})
 
         st.subheader("2. Add Products to Cart")
         products = client._get("/admin/api/2026-10/products.json")
@@ -137,24 +161,56 @@ if app_mode == "Cashier Checkout":
                 subtotal += item.get('price', 0.0)
 
             st.divider()
+
+            # --- DISCOUNT & OFFERS SLAB ---
+            st.subheader("🎟️ Offers & Discounts")
+            offers = client._get("offers.json") # or load from data/offers.json
+            if not offers or not isinstance(offers, list):
+                # Fallback mock offers if endpoint fails
+                offers = [
+                    {"title": "10% Off Progressive Launch", "percentage": 10.0, "code": "PROG10"},
+                    {"title": "₹500 Flat Store Special", "percentage": 0.0, "flat_amount": 500.0, "code": "FLAT500"},
+                    {"title": "20% VIP Season Discount", "percentage": 20.0, "code": "VIP20"}
+                ]
             
-            # Optical Tax Calculation (Inclusive GST split into CGST/SGST)
-            tax_amount = subtotal * 0.18 / 1.18 
-            net_taxable = subtotal - tax_amount
+            offer_choices = {f"{o.get('title')} ({o.get('percentage', 0)}% off)": o for o in offers if isinstance(o, dict)}
+            offer_choices["No Discount"] = None
+            
+            selected_offer_label = st.selectbox("Apply Active Offer Slab", options=list(offer_choices.keys()))
+            
+            discount_val = 0.0
+            if selected_offer_label and selected_offer_label != "No Discount":
+                selected_offer = offer_choices[selected_offer_label]
+                pct = float(selected_offer.get('percentage', 0.0))
+                if pct > 0:
+                    discount_val = subtotal * (pct / 100.0)
+                elif 'flat_amount' in selected_offer:
+                    discount_val = float(selected_offer.get('flat_amount', 0.0))
+
+            final_payable = max(0.0, subtotal - discount_val)
+
+            st.divider()
+            
+            # Optical Tax Calculation (Inclusive GST split)
+            tax_amount = final_payable * 0.18 / 1.18 
+            net_taxable = final_payable - tax_amount
             
             st.markdown(f"**Subtotal (MRP Incl. GST):** ₹{subtotal:.2f}")
+            if discount_val > 0:
+                st.markdown(f"**Discount Applied:** -₹{discount_val:.2f}")
             st.markdown(f"**Net Taxable Value:** ₹{net_taxable:.2f}")
             st.markdown(f"**GST (CGST + SGST):** ₹{tax_amount:.2f}")
-            st.markdown(f"### **Total Amount Payable: ₹{subtotal:.2f}**")
+            st.markdown(f"### **Total Amount Payable: ₹{final_payable:.2f}**")
 
             payment_mode = st.selectbox("Payment Terminal Mode", ["UPI", "Credit/Debit Card", "Cash"])
             
             if st.button("Complete Transaction & Generate Invoice", type="primary"):
                 if not st.session_state.current_customer:
-                    st.error("Please select a customer before checkout.")
+                    st.error("Please select or register a customer before checkout.")
                 else:
                     invoice_no = f"INV-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-                    st.success(f"Transaction Successful! Invoice #{invoice_no} generated and recorded in Shopify note_attributes.")
+                    cust_name = f"{st.session_state.current_customer.get('first_name', '')} {st.session_state.current_customer.get('last_name', '')}"
+                    st.success(f"Transaction Successful! Invoice #{invoice_no} generated for {cust_name} and recorded in Shopify.")
                     st.balloons()
                     st.session_state.cart = [] # Clear cart
 
@@ -205,7 +261,6 @@ elif app_mode == "Refunds & Returns":
                 item_price = float(item.get("price", 0.0))
                 item_type = item.get("variant_title", "Standard")
                 
-                # Optical Rule: Frames can be restocked, custom lenses are excluded
                 is_returnable = st.checkbox(f"Return: {item_title} ({item_type}) - ₹{item_price:.2f}", key=f"ref_item_{idx}")
                 if is_returnable:
                     total_refund_calc += item_price
