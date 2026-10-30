@@ -89,7 +89,6 @@ if app_mode == "Cashier Checkout":
     with col1:
         st.subheader("1. Customer & Prescription Lookup")
         
-        # Mode selector to avoid dropdown locking
         cust_mode = st.radio("Customer Selection Mode", ["Select Existing Customer", "Register New Walk-In Customer"], horizontal=True)
         
         if cust_mode == "Register New Walk-In Customer":
@@ -123,7 +122,6 @@ if app_mode == "Cashier Checkout":
                 st.success(f"Selected: {cust.get('first_name')} {cust.get('last_name')}")
                 st.json({"Email": cust.get('email', 'N/A'), "Tags": cust.get('tags', 'N/A'), "Phone": cust.get('phone', 'N/A')})
 
-        # Display currently selected customer badge if active
         if st.session_state.current_customer:
             c_active = st.session_state.current_customer
             st.info(f"✅ **Active Customer:** {c_active.get('first_name')} {c_active.get('last_name')} ({c_active.get('phone')})")
@@ -166,10 +164,8 @@ if app_mode == "Cashier Checkout":
 
             st.divider()
 
-            # --- DISCOUNT & OFFERS SLAB ---
             st.subheader("🎟️ Offers & Discounts")
             
-            # Explicit discount offer slabs including Diwali 10% offer
             offer_choices = {
                 "🪔 Diwali Special: 10% Off Storewide (DIWALI10)": {"percentage": 10.0, "code": "DIWALI10"},
                 "⭐ VIP Season Discount: 20% Off (VIP20)": {"percentage": 20.0, "code": "VIP20"},
@@ -192,7 +188,6 @@ if app_mode == "Cashier Checkout":
 
             st.divider()
             
-            # Optical Tax Calculation (Inclusive GST split)
             tax_amount = final_payable * 0.18 / 1.18 
             net_taxable = final_payable - tax_amount
             
@@ -213,7 +208,7 @@ if app_mode == "Cashier Checkout":
                     cust_name = f"{st.session_state.current_customer.get('first_name', '')} {st.session_state.current_customer.get('last_name', '')}"
                     st.success(f"Transaction Successful! Invoice #{invoice_no} generated for {cust_name} and recorded in Shopify.")
                     st.balloons()
-                    st.session_state.cart = [] # Clear cart
+                    st.session_state.cart = []
 
 # ==========================================
 # 2. CATALOG & STOCK TAB
@@ -287,8 +282,11 @@ elif app_mode == "Refunds & Returns":
 elif app_mode == "Day-End Z-Report":
     st.title("📊 Day-End Z-Report & Reconciliation")
     
-    current_date = date.today().strftime("%B %d, %Y")
-    st.caption(f"Reporting Date: {current_date}")
+    # Manual Date Selector
+    selected_report_date = st.date_input("Select Report Date", value=date.today())
+    formatted_date_str = selected_report_date.strftime("%B %d, %Y")
+    
+    st.caption(f"Active Reporting Date: {formatted_date_str}")
 
     orders = client._get("/admin/api/2026-10/orders.json")
     
@@ -331,5 +329,5 @@ elif app_mode == "Day-End Z-Report":
         st.warning(f"⚠️ Drawer Over by ₹{variance:.2f}. Check manual cash drop logs.")
 
     if st.button("Finalize & Lock Day-End Z-Report"):
-        st.success(f"Z-Report for {current_date} successfully locked, timestamped, and submitted to store ledger.")
+        st.success(f"Z-Report for {formatted_date_str} successfully locked, timestamped, and submitted to store ledger.")
         st.balloons()
