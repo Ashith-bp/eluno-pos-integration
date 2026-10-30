@@ -67,8 +67,6 @@ if "cart" not in st.session_state:
     st.session_state.cart = []
 if "current_customer" not in st.session_state:
     st.session_state.current_customer = None
-if "applied_discount" not in st.session_state:
-    st.session_state.applied_discount = {"title": "None", "percentage": 0.0, "amount": 0.0}
 
 # --- SIDEBAR NAVIGATION ---
 st.sidebar.title("👓 Eluno POS Terminal")
@@ -90,39 +88,45 @@ if app_mode == "Cashier Checkout":
 
     with col1:
         st.subheader("1. Customer & Prescription Lookup")
-        customers = client._get("/admin/api/2026-10/customers.json")
         
-        customer_options = {f"{c.get('first_name', '')} {c.get('last_name', '')} ({c.get('phone', 'No Phone')})": c for c in customers if isinstance(c, dict)}
-        # Add a manual "Register New Customer" option
-        customer_options["➕ Register New Walk-in Customer"] = "NEW_CUSTOMER"
+        # Mode selector to avoid dropdown locking
+        cust_mode = st.radio("Customer Selection Mode", ["Select Existing Customer", "Register New Walk-In Customer"], horizontal=True)
         
-        selected_cust_label = st.selectbox("Search Customer by Name / Phone", options=list(customer_options.keys()))
-        
-        if selected_cust_label == "➕ Register New Walk-in Customer":
-            st.markdown("#### Enter New Customer Details")
-            new_fname = st.text_input("First Name")
-            new_lname = st.text_input("Last Name")
-            new_phone = st.text_input("Phone Number (+91...)")
-            new_email = st.text_input("Email Address")
+        if cust_mode == "Register New Walk-In Customer":
+            st.markdown("#### New Walk-In Details")
+            new_fname = st.text_input("First Name", key="new_fn")
+            new_lname = st.text_input("Last Name", key="new_ln")
+            new_phone = st.text_input("Phone Number (+91...)", key="new_ph")
+            new_email = st.text_input("Email Address", key="new_em")
             
             if st.button("Save & Select Customer"):
                 if new_fname and new_phone:
-                    cust = {
+                    st.session_state.current_customer = {
                         "first_name": new_fname,
                         "last_name": new_lname,
                         "phone": new_phone,
-                        "email": new_email,
-                        "tags": "pos,new_customer"
+                        "email": new_email or "walkin@eluno.pos",
+                        "tags": "pos,walk_in,new"
                     }
-                    st.session_state.current_customer = cust
-                    st.success(f"New customer registered & selected: {new_fname} {new_lname}")
+                    st.success(f"Customer Registered & Selected: {new_fname} {new_lname}")
                 else:
                     st.error("Please provide at least First Name and Phone Number.")
-        elif selected_cust_label and selected_cust_label in customer_options:
-            cust = customer_options[selected_cust_label]
-            st.session_state.current_customer = cust
-            st.success(f"Selected: {cust.get('first_name')} {cust.get('last_name')}")
-            st.json({"Email": cust.get('email', 'N/A'), "Tags": cust.get('tags', 'N/A'), "Phone": cust.get('phone', 'N/A')})
+        else:
+            customers = client._get("/admin/api/2026-10/customers.json")
+            customer_options = {f"{c.get('first_name', '')} {c.get('last_name', '')} ({c.get('phone', 'No Phone')})": c for c in customers if isinstance(c, dict)}
+            
+            selected_cust_label = st.selectbox("Search Customer by Name / Phone", options=list(customer_options.keys()) if customer_options else ["No Customers Found"])
+            
+            if selected_cust_label and selected_cust_label in customer_options:
+                cust = customer_options[selected_cust_label]
+                st.session_state.current_customer = cust
+                st.success(f"Selected: {cust.get('first_name')} {cust.get('last_name')}")
+                st.json({"Email": cust.get('email', 'N/A'), "Tags": cust.get('tags', 'N/A'), "Phone": cust.get('phone', 'N/A')})
+
+        # Display currently selected customer badge if active
+        if st.session_state.current_customer:
+            c_active = st.session_state.current_customer
+            st.info(f"✅ **Active Customer:** {c_active.get('first_name')} {c_active.get('last_name')} ({c_active.get('phone')})")
 
         st.subheader("2. Add Products to Cart")
         products = client._get("/admin/api/2026-10/products.json")
@@ -164,17 +168,14 @@ if app_mode == "Cashier Checkout":
 
             # --- DISCOUNT & OFFERS SLAB ---
             st.subheader("🎟️ Offers & Discounts")
-            offers = client._get("offers.json") # or load from data/offers.json
-            if not offers or not isinstance(offers, list):
-                # Fallback mock offers if endpoint fails
-                offers = [
-                    {"title": "10% Off Progressive Launch", "percentage": 10.0, "code": "PROG10"},
-                    {"title": "₹500 Flat Store Special", "percentage": 0.0, "flat_amount": 500.0, "code": "FLAT500"},
-                    {"title": "20% VIP Season Discount", "percentage": 20.0, "code": "VIP20"}
-                ]
             
-            offer_choices = {f"{o.get('title')} ({o.get('percentage', 0)}% off)": o for o in offers if isinstance(o, dict)}
-            offer_choices["No Discount"] = None
+            # Explicit discount offer slabs including Diwali 10% offer
+            offer_choices = {
+                "🪔 Diwali Special: 10% Off Storewide (DIWALI10)": {"percentage": 10.0, "code": "DIWALI10"},
+                "⭐ VIP Season Discount: 20% Off (VIP20)": {"percentage": 20.0, "code": "VIP20"},
+                "🏷️ Flat ₹500 Store Special (FLAT500)": {"flat_amount": 500.0, "code": "FLAT500"},
+                "No Discount": None
+            }
             
             selected_offer_label = st.selectbox("Apply Active Offer Slab", options=list(offer_choices.keys()))
             
@@ -197,7 +198,7 @@ if app_mode == "Cashier Checkout":
             
             st.markdown(f"**Subtotal (MRP Incl. GST):** ₹{subtotal:.2f}")
             if discount_val > 0:
-                st.markdown(f"**Discount Applied:** -₹{discount_val:.2f}")
+                st.markdown(f"**Discount Applied ({selected_offer_label.split(':')[0]}):** -₹{discount_val:.2f}")
             st.markdown(f"**Net Taxable Value:** ₹{net_taxable:.2f}")
             st.markdown(f"**GST (CGST + SGST):** ₹{tax_amount:.2f}")
             st.markdown(f"### **Total Amount Payable: ₹{final_payable:.2f}**")
@@ -206,7 +207,7 @@ if app_mode == "Cashier Checkout":
             
             if st.button("Complete Transaction & Generate Invoice", type="primary"):
                 if not st.session_state.current_customer:
-                    st.error("Please select or register a customer before checkout.")
+                    st.error("Please select or register a customer before completing checkout.")
                 else:
                     invoice_no = f"INV-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
                     cust_name = f"{st.session_state.current_customer.get('first_name', '')} {st.session_state.current_customer.get('last_name', '')}"
