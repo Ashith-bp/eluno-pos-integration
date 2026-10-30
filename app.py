@@ -245,23 +245,90 @@ if app_mode == "Cashier Checkout":
                     st.session_state.cart = []
 
 # ==========================================
-# 2. CATALOG & STOCK TAB
+# 2. CATALOG & STOCK TAB (ENHANCED GRID VIEW)
 # ==========================================
 elif app_mode == "Catalog & Stock":
-    st.title("📦 Catalog & Inventory Search")
-    search_query = st.text_input("Search inventory by product name, HSN, or tag:")
+    st.title("📦 Product Catalog & Inventory Management")
+    
+    # Filter controls bar
+    f_col1, f_col2 = st.columns([2, 1])
+    search_query = f_col1.text_input("🔍 Search products by name, brand, or SKU:", placeholder="e.g. Ray-Ban, Aviator, Lens")
     
     products = client._get("/admin/api/2026-10/products.json")
-    for p in products:
-        if isinstance(p, dict):
-            title = p.get('title', 'Unknown')
-            if not search_query or search_query.lower() in title.lower():
-                with st.expander(f"{title} ({p.get('product_type', 'General')})"):
-                    st.write(f"**Status:** {p.get('status', 'ACTIVE')}")
-                    st.write(f"**Vendor:** {p.get('vendor', 'Eluno Optical')}")
-                    variants = p.get('variants', [])
-                    if variants:
-                        st.write(f"**Price:** ₹{variants[0].get('price', '0.00')} | **SKU:** {variants[0].get('sku', 'N/A')}")
+    
+    # Extract unique product types for filtering category dropdown
+    categories = ["All Categories"]
+    if isinstance(products, list):
+        for p in products:
+            if isinstance(p, dict):
+                ptype = p.get('product_type', 'General')
+                if ptype not in categories:
+                    categories.append(ptype)
+                    
+    selected_category = f_col2.selectbox("Filter by Category", options=categories)
+    
+    st.markdown("---")
+    
+    # Filter products based on search query and category
+    filtered_products = []
+    if isinstance(products, list):
+        for p in products:
+            if isinstance(p, dict):
+                title = p.get('title', 'Unknown')
+                ptype = p.get('product_type', 'General')
+                variants = p.get('variants', [{}])
+                sku = variants[0].get('sku', '') if variants else ''
+                
+                matches_search = not search_query or (search_query.lower() in title.lower() or search_query.lower() in sku.lower())
+                matches_cat = selected_category == "All Categories" or ptype == selected_category
+                
+                if matches_search and matches_cat:
+                    filtered_products.append(p)
+                    
+    if not filtered_products:
+        st.info("No products found matching your search criteria.")
+    else:
+        # Display products in a professional e-commerce grid (3 columns per row)
+        cols_per_row = 3
+        for i in range(0, len(filtered_products), cols_per_row):
+            row_cols = st.columns(cols_per_row)
+            for j in range(cols_per_row):
+                idx = i + j
+                if idx < len(filtered_products):
+                    p = filtered_products[idx]
+                    variants = p.get('variants', [{}])
+                    variant = variants[0] if variants else {}
+                    price = float(variant.get('price', 0.0))
+                    sku = variant.get('sku', 'N/A')
+                    status = p.get('status', 'ACTIVE')
+                    vendor = p.get('vendor', 'Eluno Optical')
+                    ptype = p.get('product_type', 'Frame')
+                    
+                    with row_cols[j]:
+                        # Professional card container
+                        with st.container(border=True):
+                            st.markdown(f"#### {p.get('title', 'Product')}")
+                            st.caption(f"**Brand/Vendor:** {vendor} | **Type:** {ptype}")
+                            
+                            # Price and stock indicator badge look
+                            p_col1, p_col2 = st.columns(2)
+                            p_col1.markdown(f"### **₹{price:,.2f}**")
+                            if status == 'ACTIVE':
+                                p_col2.markdown("🟢 **In Stock**")
+                            else:
+                                p_col2.markdown("🔴 **Out of Stock**")
+                                
+                            st.text(f"SKU: {sku}")
+                            
+                            # Quick action button inside card
+                            if st.button("Quick Add to Cart", key=f"grid_add_{p.get('id', idx)}"):
+                                st.session_state.cart.append({
+                                    "title": p.get('title'),
+                                    "price": price,
+                                    "type": ptype,
+                                    "sku": sku
+                                })
+                                st.toast(f"Added {p.get('title')} to cart!", icon="🛒")
 
 # ==========================================
 # 3. REFUNDS & RETURNS TAB
@@ -347,7 +414,7 @@ elif app_mode == "Day-End Z-Report":
     selected_report_date = st.date_input("Select Report Date", value=date(2026, 10, 6))
     formatted_date_str = selected_report_date.strftime("%B %d, %Y")
     
-    st.caption(f"Active Reporting Date: {formatted_date_str}")
+    st.caption(f"Active ReportingDate: {formatted_date_str}")
 
     orders = client._get("/admin/api/2026-10/orders.json")
     
