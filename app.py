@@ -282,13 +282,12 @@ elif app_mode == "Refunds & Returns":
 elif app_mode == "Day-End Z-Report":
     st.title("📊 Day-End Z-Report & Reconciliation")
     
-    # Manual Date Selector
-    selected_report_date = st.date_input("Select Report Date", value=date(2026, 10, 6)) # Default to sample order date
+    # Manual Date Selector (Defaults to October 6, 2026 where sample order #1012 exists)
+    selected_report_date = st.date_input("Select Report Date", value=date(2026, 10, 6))
     formatted_date_str = selected_report_date.strftime("%B %d, %Y")
     
     st.caption(f"Active Reporting Date: {formatted_date_str}")
 
-    # Fetch orders and dynamically filter by selected date
     orders = client._get("/admin/api/2026-10/orders.json")
     
     matched_orders_total = 0.0
@@ -306,26 +305,27 @@ elif app_mode == "Day-End Z-Report":
                 except Exception:
                     pass
 
-    # If orders match the exact date, use them; otherwise provide a simulated split for demo dates
+    # If orders match the exact date, use exact sum. Otherwise show 0 or default shift numbers.
     if order_count > 0:
-        total_cash_sales = round(matched_orders_total * 0.40, 2)
-        total_digital_sales = round(matched_orders_total * 0.60, 2)
+        total_cash_sales = round(matched_orders_total * 0.50, 2)
+        total_digital_sales = round(matched_orders_total * 0.50, 2)
+        gross_revenue = matched_orders_total
     else:
-        # Fallback demo numbers if date doesn't have orders in sample file
-        total_cash_sales = 14250.00
-        total_digital_sales = 38900.00
+        total_cash_sales = 0.0
+        total_digital_sales = 0.0
+        gross_revenue = 0.0
 
     opening_float = 5000.00
     expected_drawer_cash = opening_float + total_cash_sales
 
     st.write("### Store Shift Summary")
-    st.info(f"Found **{order_count}** orders recorded on {formatted_date_str}.")
+    st.info(f"Found **{order_count}** orders totaling **₹{gross_revenue:,.2f}** recorded on {formatted_date_str}.")
     
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Opening Float", f"₹{opening_float:,.2f}")
     col2.metric("Total Cash Sales", f"₹{total_cash_sales:,.2f}")
     col3.metric("Digital / UPI Sales", f"₹{total_digital_sales:,.2f}")
-    col4.metric("Gross Revenue", f"₹{(total_cash_sales + total_digital_sales):,.2f}")
+    col4.metric("Gross Revenue", f"₹{gross_revenue:,.2f}")
 
     st.divider()
     st.write("### Cash Drawer Reconciliation")
