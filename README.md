@@ -68,3 +68,8 @@ Behaviour that matches production and that your code has to live with:
 ## Not covered by the mocks, on purpose
 
 Catalog search UI, customer creation, prescription creation, eye-test booking, lab order creation, printer hardware, e-invoicing/IRN, Shopify webhooks. Say what you'd need from them; don't build them.
+
+## AI Assistance & Learnings
+
+- Where AI helped: I used AI extensively to build almost the entire application, which rapidly accelerated drafting the Streamlit UI, cashier workflows, and fallback exception handling.
+- Where AI went wrong: It occasionally hallucinated minor dictionary key structures, requiring manual debugging to fix data lookups.
