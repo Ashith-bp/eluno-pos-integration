@@ -1,360 +1,342 @@
 import streamlit as st
-import requests
 import json
+import os
+import requests
 import socket
-from datetime import datetime, date
+from datetime import datetime
 
-# --- PAGE CONFIGURATION ---
+# ==========================================
+# CONFIGURATION & PATHS
+# ==========================================
 st.set_page_config(
-    page_title="Eluno POS Terminal",
+    page_title="Eluno POS & Inventory Terminal",
     page_icon="👓",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
 
-# --- BACKEND CONNECTION & HEALTH CHECK ---
 API_BASE_URL = "http://localhost:8787"
+DATA_DIR = "data"
 
-def is_local_server_running(host="localhost", port=8787, timeout=0.3):
-    """Quick socket check to see if the mock server is active locally."""
-    try:
-        with socket.create_connection((host, port), timeout=timeout):
-            return True
-    except (socket.timeout, socket.error, ConnectionRefusedError):
-        return False
-
-SERVER_ACTIVE = is_local_server_running()
-
+# ==========================================
+# RESILIENT API CLIENT (FALLBACK HANDLER)
+# ==========================================
 class ElunoAPIClient:
-    """Resilient API client with fallback support for offline/cloud execution."""
-    def __init__(self, base_url):
+    def __init__(self, base_url=API_BASE_URL):
         self.base_url = base_url
 
-    def _get(self, endpoint):
-        if not SERVER_ACTIVE:
-            return self._load_local_fallback(endpoint)
+    def _is_server_alive(self):
         try:
-            response = requests.get(f"{self.base_url}{endpoint}", timeout=2.0)
-            if response.status_code in [429, 503]:
-                st.toast(f"⚠️ Server status {response.status_code}: Using local ledger sync.", icon="⚡")
-                return self._load_local_fallback(endpoint)
-            response.raise_for_status()
-            return response.json()
-        except Exception:
-            return self._load_local_fallback(endpoint)
+            socket.create_connection(("localhost", 8787), timeout=0.3)
+            return True
+        except (socket.timeout, ConnectionRefusedError, OSError):
+            return False
 
-    def _load_local_fallback(self, endpoint):
-        """Safely loads fallback data from local data/ directory."""
-        try:
-            if "customers" in endpoint:
-                with open("data/customers.json", "r") as f: return json.load(f)
-            elif "products" in endpoint:
-                with open("data/products.json", "r") as f: return json.load(f)
-            elif "orders" in endpoint:
-                with open("data/orders_sample.json", "r") as f: return json.load(f)
-            elif "prescriptions" in endpoint:
-                with open("data/prescriptions.json", "r") as f: return json.load(f)
-            elif "offers" in endpoint:
-                with open("data/offers.json", "r") as f: return json.load(f)
-        except Exception:
-            return []
+    def _load_local_fallback(self, filename):
+        path = os.path.join(DATA_DIR, filename)
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
         return []
 
-client = ElunoAPIClient(API_BASE_URL)
+    def get(self, endpoint, fallback_filename):
+        if not self._is_server_alive():
+            st.toast(f"⚠️ Server offline: Loaded local fallback for {fallback_filename}", icon="⚡")
+            return self._load_local_fallback(fallback_filename)
+        
+        try:
+            response = requests.get(f"{self.base_url}/{endpoint}", timeout=2.0)
+            if response.status_code in [429, 503]:
+                st.toast(f"⚠️ Server status {response.status_code}: Using local ledger sync.", icon="⚡")
+                return self._load_local_fallback(fallback_filename)
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException:
+            st.toast(f"⚠️ Network error: Loaded local fallback for {fallback_filename}", icon="⚡")
+            return self._load_local_fallback(fallback_filename)
 
-# --- SESSION STATE INITIALIZATION ---
+api_client = ElunoAPIClient()
+
+# ==========================================
+# SESSION STATE INITIALIZATION
+# ==========================================
 if "cart" not in st.session_state:
     st.session_state.cart = []
-if "current_customer" not in st.session_state:
-    st.session_state.current_customer = None
-
-# --- SIDEBAR NAVIGATION ---
-st.sidebar.title("👓 Eluno POS Terminal")
-st.sidebar.caption("Retail Optical Cashier System")
-if SERVER_ACTIVE:
-    st.sidebar.success("🟢 Backend Mock Server: Online")
-else:
-    st.sidebar.warning("☁️ Cloud Mode: Local Fallbacks Active")
-
-app_mode = st.sidebar.radio("Navigation", ["Cashier Checkout", "Catalog & Stock", "Refunds & Returns", "Day-End Z-Report"])
+if "orders" not in st.session_state:
+    # Load initial orders if available locally
+    orders_path = os.path.join(DATA_DIR, "orders_sample.json")
+    if os.path.exists(orders_path):
+        with open(orders_path, "r", encoding="utf-8") as f:
+            st.session_state.orders = json.load(f)
+    else:
+        st.session_state.orders = []
 
 # ==========================================
-# 1. CASHIER CHECKOUT TAB
+# SIDEBAR NAVIGATION
 # ==========================================
-if app_mode == "Cashier Checkout":
-    st.title("🛍️ Point of Sale - Checkout Terminal")
+st.sidebar.title("👓 Eluno Optical POS")
+st.sidebar.caption("Store Terminal & Inventory")
+app_mode = st.sidebar.selectbox("Select Module", [
+    "🛒 Cashier Checkout", 
+    "📦 Catalog & Stock", 
+    "🔄 Itemized Refunds", 
+    "📊 Z-Report & Audit"
+])
+
+# ==========================================
+# MODULE 1: CASHIER CHECKOUT
+# ==========================================
+if app_mode == "🛒 Cashier Checkout":
+    st.title("🛒 Point of Sale & Lens Validation Terminal")
     
-    col1, col2 = st.columns([1, 1])
-
+    col1, col2 = st.columns([1.2, 0.8])
+    
     with col1:
-        st.subheader("1. Customer & Prescription Lookup")
+        st.subheader("1. Customer Lookup & Prescription")
+        customers = api_client.get("customers", "customers.json")
+        prescriptions = api_client.get("prescriptions", "prescriptions.json")
         
-        cust_mode = st.radio("Customer Selection Mode", ["Select Existing Customer", "Register New Walk-In Customer"], horizontal=True)
+        # Phone input for customer lookup
+        phone_input = st.text_input("Enter Customer Phone Number", placeholder="+919000000020")
         
-        if cust_mode == "Register New Walk-In Customer":
-            st.markdown("#### New Walk-In Details")
-            new_fname = st.text_input("First Name", key="new_fn")
-            new_lname = st.text_input("Last Name", key="new_ln")
-            new_phone = st.text_input("Phone Number (+91...)", key="new_ph")
-            new_email = st.text_input("Email Address", key="new_em")
-            
-            if st.button("Save & Select Customer"):
-                if new_fname and new_phone:
-                    st.session_state.current_customer = {
-                        "first_name": new_fname,
-                        "last_name": new_lname,
-                        "phone": new_phone,
-                        "email": new_email or "walkin@eluno.pos",
-                        "tags": "pos,walk_in,new"
-                    }
-                    st.success(f"Customer Registered & Selected: {new_fname} {new_lname}")
+        selected_customer = None
+        active_rx = None
+        
+        if phone_input:
+            # Search customer by phone
+            matched_customers = [c for c in customers if phone_input in c.get("phone", "")]
+            if matched_customers:
+                selected_customer = matched_customers[0]
+                st.success(f"Customer Found: **{selected_customer.get('name')}** (ID: {selected_customer.get('customer_id')})")
+                
+                # Automatically lookup active prescription
+                matched_rx = [rx for rx in prescriptions if str(rx.get("customer_id")) == str(selected_customer.get("customer_id")) or phone_input in rx.get("phone", "")]
+                if matched_rx:
+                    active_rx = matched_rx[0]
+                    st.info(f"👓 Active Prescription Found (`{active_rx.get('rx_id')}`) - Lens Validation Ready")
+                    
+                    rx_col1, rx_col2 = st.columns(2)
+                    with rx_col1:
+                        st.markdown("**Right Eye (OD)**")
+                        od = active_rx.get('od', {})
+                        st.write(f"Sph: {od.get('sph')} | Cyl: {od.get('cyl')} | Axis: {od.get('axis')}°")
+                    with rx_col2:
+                        st.markdown("**Left Eye (OS)**")
+                        os = active_rx.get('os', {})
+                        st.write(f"Sph: {os.get('sph')} | Cyl: {os.get('cyl')} | Axis: {os.get('axis')}°")
+                    
+                    pd = active_rx.get('pd', {})
+                    st.caption(f"PD: {pd.get('binocular')} mm | Valid Until: {active_rx.get('valid_until')}")
                 else:
-                    st.error("Please provide at least First Name and Phone Number.")
-        else:
-            customers = client._get("/admin/api/2026-10/customers.json")
-            customer_options = {f"{c.get('first_name', '')} {c.get('last_name', '')} ({c.get('phone', 'No Phone')})": c for c in customers if isinstance(c, dict)}
-            
-            selected_cust_label = st.selectbox("Search Customer by Name / Phone", options=list(customer_options.keys()) if customer_options else ["No Customers Found"])
-            
-            if selected_cust_label and selected_cust_label in customer_options:
-                cust = customer_options[selected_cust_label]
-                st.session_state.current_customer = cust
-                st.success(f"Selected: {cust.get('first_name')} {cust.get('last_name')}")
-                st.json({"Email": cust.get('email', 'N/A'), "Tags": cust.get('tags', 'N/A'), "Phone": cust.get('phone', 'N/A')})
+                    st.warning("⚠️ No active prescription found for this customer.")
+            else:
+                st.warning("Customer not found. Walk-in mode active.")
 
-        if st.session_state.current_customer:
-            c_active = st.session_state.current_customer
-            st.info(f"✅ **Active Customer:** {c_active.get('first_name')} {c_active.get('last_name')} ({c_active.get('phone')})")
-
+        st.markdown("---")
         st.subheader("2. Add Products to Cart")
-        products = client._get("/admin/api/2026-10/products.json")
+        products = api_client.get("products", "products.json")
         
-        prod_options = {p.get('title', 'Untitled Product'): p for p in products if isinstance(p, dict)}
-        selected_prod_label = st.selectbox("Select Frame or Lens", options=list(prod_options.keys()) if prod_options else ["No Products Found"])
+        product_options = {f"{p.get('name')} (SKU: {p.get('sku')}) - ₹{p.get('mrp')}": p for p in products}
+        selected_prod_label = st.selectbox("Select Catalog Item", options=list(product_options.keys()) if product_options else ["No products available"])
         
-        if selected_prod_label and selected_prod_label in prod_options:
-            prod = prod_options[selected_prod_label]
-            variants = prod.get('variants', [{}])
-            variant = variants[0] if variants else {}
-            price = float(variant.get('price', 0.0))
-            
-            if st.button("Add to Cart"):
+        if product_options and st.button("Add to Cart"):
+            prod = product_options[selected_prod_label]
+            # Check if already in cart
+            existing_item = next((item for item in st.session_state.cart if item['sku'] == prod['sku']), None)
+            if existing_item:
+                existing_item['qty'] += 1
+            else:
                 st.session_state.cart.append({
-                    "title": prod.get('title'),
-                    "price": price,
-                    "type": prod.get('product_type', 'Frame'),
-                    "sku": variant.get('sku', 'N/A')
+                    "sku": prod.get("sku"),
+                    "name": prod.get("name"),
+                    "type": prod.get("type", "frame"),
+                    "mrp": prod.get("mrp", 0.0),
+                    "qty": 1
                 })
-                st.toast(f"Added {prod.get('title')} to cart!", icon="🛒")
+            st.toast("Item added to cart!", icon="🛒")
 
     with col2:
-        st.subheader("3. Current Cart & Billing")
+        st.subheader("3. Active Cart & Billing")
         if not st.session_state.cart:
             st.info("Cart is currently empty.")
         else:
             subtotal = 0.0
-            for idx, item in enumerate(st.session_state.cart):
-                c1, c2, c3 = st.columns([3, 2, 1])
-                c1.write(item.get('title'))
-                c2.write(f"₹{item.get('price'):.2f}")
-                if c3.button("❌", key=f"remove_{idx}"):
-                    st.session_state.cart.pop(idx)
+            for i, item in enumerate(st.session_state.cart):
+                item_total = item['mrp'] * item['qty']
+                subtotal += item_total
+                
+                c_a, c_b, c_c = st.columns([2, 1, 1])
+                c_a.write(f"**{item['name']}**\n\n₹{item['mrp']} x {item['qty']}")
+                if c_b.button("❌", key=f"rem_{i}"):
+                    st.session_state.cart.pop(i)
                     st.rerun()
-                subtotal += item.get('price', 0.0)
-
-            st.divider()
-
-            # --- DISCOUNT & OFFERS SLAB (WITH CUSTOM INPUT) ---
-            st.subheader("🎟️ Offers & Discounts")
             
-            offer_choices = {
-                "🪔 Diwali Special: 10% Off Storewide (DIWALI10)": {"type": "percentage", "val": 10.0},
-                "⭐ VIP Season Discount: 20% Off (VIP20)": {"type": "percentage", "val": 20.0},
-                "🏷️ Flat ₹500 Store Special (FLAT500)": {"type": "flat", "val": 500.0},
-                "✏️ Enter Custom Discount": {"type": "custom"},
-                "No Discount": None
-            }
+            st.markdown("---")
             
-            selected_offer_label = st.selectbox("Apply Active Offer Slab", options=list(offer_choices.keys()))
+            # Offers & Discounts
+            st.markdown("**Offers & Discounts**")
+            discount_type = st.selectbox("Apply Offer Slab", ["None", "Diwali 10% Off", "VIP 20% Off", "Flat ₹500 Off", "Custom Discount"])
             
-            discount_val = 0.0
-            selected_offer = offer_choices[selected_offer_label]
+            discount_amount = 0.0
+            if discount_type == "Diwali 10% Off":
+                discount_amount = subtotal * 0.10
+            elif discount_type == "VIP 20% Off":
+                discount_amount = subtotal * 0.20
+            elif discount_type == "Flat ₹500 Off":
+                discount_amount = 500.0
+            elif discount_type == "Custom Discount":
+                cust_disc_val = st.number_input("Discount Value", min_value=0.0, value=0.0)
+                is_pct = st.checkbox("Is Percentage (%)?")
+                discount_amount = (subtotal * (cust_disc_val / 100.0)) if is_pct else cust_disc_val
 
-            if selected_offer:
-                if selected_offer["type"] == "percentage":
-                    discount_val = subtotal * (selected_offer["val"] / 100.0)
-                elif selected_offer["type"] == "flat":
-                    discount_val = selected_offer["val"]
-                elif selected_offer["type"] == "custom":
-                    custom_mode_type = st.radio("Custom Discount Type", ["Percentage (%)", "Flat Amount (₹)"], horizontal=True)
-                    if custom_mode_type == "Percentage (%)":
-                        custom_pct = st.number_input("Custom Percentage (%)", min_value=0.0, max_value=100.0, value=5.0, step=1.0)
-                        discount_val = subtotal * (custom_pct / 100.0)
-                    else:
-                        custom_amt = st.number_input("Custom Flat Amount (₹)", min_value=0.0, max_value=subtotal, value=100.0, step=50.0)
-                        discount_val = custom_amt
-
-            final_payable = max(0.0, subtotal - discount_val)
-
-            st.divider()
+            final_payable = max(0.0, subtotal - discount_amount)
             
-            # Optical Tax Calculation (Inclusive GST split)
-            tax_amount = final_payable * 0.18 / 1.18 
+            # Inclusive GST Calculation (18% GST extracted from MRP)
+            tax_amount = (final_payable * 0.18) / 1.18
             net_taxable = final_payable - tax_amount
             
-            st.markdown(f"**Subtotal (MRP Incl. GST):** ₹{subtotal:.2f}")
-            if discount_val > 0:
-                st.markdown(f"**Discount Applied:** -₹{discount_val:.2f}")
-            st.markdown(f"**Net Taxable Value:** ₹{net_taxable:.2f}")
-            st.markdown(f"**GST (CGST + SGST):** ₹{tax_amount:.2f}")
-            st.markdown(f"### **Total Amount Payable: ₹{final_payable:.2f}**")
-
-            payment_mode = st.selectbox("Payment Terminal Mode", ["UPI", "Credit/Debit Card", "Cash"])
+            st.write(f"Subtotal: ₹{subtotal:.2f}")
+            if discount_amount > 0:
+                st.write(f"Discount: -₹{discount_amount:.2f}")
+            st.write(f"**Final Payable (MRP incl. GST): ₹{final_payable:.2f}**")
+            st.caption(f"Tax Breakdown (18% Inclusive): CGST/SGST Tax Component: ₹{tax_amount:.2f}")
             
-            if st.button("Complete Transaction & Generate Invoice", type="primary"):
-                if not st.session_state.current_customer:
-                    st.error("Please select or register a customer before completing checkout.")
-                else:
-                    invoice_no = f"INV-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-                    cust_name = f"{st.session_state.current_customer.get('first_name', '')} {st.session_state.current_customer.get('last_name', '')}"
-                    st.success(f"Transaction Successful! Invoice #{invoice_no} generated for {cust_name} and recorded in Shopify.")
-                    st.balloons()
-                    st.session_state.cart = []
+            payment_mode = st.selectbox("Payment Mode", ["UPI", "Cash", "Card", "Credit/Split"])
+            
+            if st.button("Complete Charge & Print Invoice", type="primary"):
+                new_order = {
+                    "order_id": f"ORD-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+                    "customer": selected_customer.get('name') if selected_customer else "Walk-in Customer",
+                    "phone": phone_input if phone_input else "N/A",
+                    "items": st.session_state.cart.copy(),
+                    "subtotal": subtotal,
+                    "discount": discount_amount,
+                    "total_paid": final_payable,
+                    "payment_mode": payment_mode,
+                    "created_at": datetime.now().isoformat()
+                }
+                st.session_state.orders.append(new_order)
+                st.session_state.cart = []
+                st.balloons()
+                st.success(f"Payment Successful! Invoice generated: `{new_order['order_id']}`")
 
 # ==========================================
-# 2. CATALOG & STOCK TAB
+# MODULE 2: CATALOG & STOCK
 # ==========================================
-elif app_mode == "Catalog & Stock":
-    st.title("📦 Catalog & Inventory Search")
-    search_query = st.text_input("Search inventory by product name, HSN, or tag:")
+elif app_mode == "📦 Catalog & Stock":
+    st.title("📦 Optical Catalog & Inventory Management")
+    products = api_client.get("products", "products.json")
     
-    products = client._get("/admin/api/2026-10/products.json")
-    for p in products:
-        if isinstance(p, dict):
-            title = p.get('title', 'Unknown')
-            if not search_query or search_query.lower() in title.lower():
-                with st.expander(f"{title} ({p.get('product_type', 'General')})"):
-                    st.write(f"**Status:** {p.get('status', 'ACTIVE')}")
-                    st.write(f"**Vendor:** {p.get('vendor', 'Eluno Optical')}")
-                    variants = p.get('variants', [])
-                    if variants:
-                        st.write(f"**Price:** ₹{variants[0].get('price', '0.00')} | **SKU:** {variants[0].get('sku', 'N/A')}")
+    search_query = st.text_input("Search catalog by SKU or Name", placeholder="e.g. Ray-Ban or LENS")
+    
+    filtered_products = products
+    if search_query:
+        filtered_products = [p for p in products if search_query.lower() in p.get('name', '').lower() or search_query.lower() in p.get('sku', '').lower()]
+    
+    for p in filtered_products:
+        with st.container():
+            col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
+            col1.write(f"**{p.get('name')}**\n\nSKU: `{p.get('sku')}` | Type: `{p.get('type', 'frame')}`")
+            col2.write(f"MRP: **₹{p.get('mrp')}**")
+            col3.write(f"Stock: **{p.get('stock', 10)} units**")
+            col4.badge("Active" if p.get('stock', 10) > 0 else "Out of Stock")
+            st.divider()
 
 # ==========================================
-# 3. REFUNDS & RETURNS TAB
+# MODULE 3: ITEMIZED REFUNDS
 # ==========================================
-elif app_mode == "Refunds & Returns":
-    st.title("🔄 Itemized Refunds & Restock Terminal")
+elif app_mode == "🔄 Itemized Refunds":
+    st.title("🔄 Itemized Returns & Restock Rules")
+    st.markdown("Enter an order ID (e.g., `#1012` or loaded session order) to process an itemized return.")
     
-    order_ref = st.text_input("Enter Order Reference / ID (e.g., #1012):", "#1012")
+    order_id_input = st.text_input("Search Order ID", placeholder="ORD-...")
     
-    if order_ref:
-        orders = client._get("/admin/api/2026-10/orders.json")
-        matched_order = None
-        for o in orders:
-            if isinstance(o, dict) and (o.get("name") == order_ref or str(o.get("id")) == order_ref or str(o.get("order_number")) == order_ref.replace("#", "")):
-                matched_order = o
-                break
+    target_order = None
+    # Check session orders or sample json orders
+    sample_orders_path = os.path.join(DATA_DIR, "orders_sample.json")
+    all_known_orders = st.session_state.orders.copy()
+    if os.path.exists(sample_orders_path):
+        with open(sample_orders_path, "r", encoding="utf-8") as f:
+            all_known_orders.extend(json.load(f))
+            
+    for o in all_known_orders:
+        if order_id_input and order_id_input.lower() in str(o.get('order_id', '')).lower():
+            target_order = o
+            break
+            
+    if target_order:
+        st.success(f"Order Found: `{target_order.get('order_id')}` | Customer: {target_order.get('customer', 'N/A')}")
+        st.write(f"Date: {target_order.get('created_at', 'N/A')} | Total Paid: ₹{target_order.get('total_paid', 0.0)}")
         
-        if matched_order:
-            st.success(f"Order Found! Reference: {matched_order.get('name', order_ref)}")
-            st.write("### Order Line Items:")
-            
-            line_items = matched_order.get("line_items", [])
-            total_refund_calc = 0.0
-            
-            for idx, item in enumerate(line_items):
-                item_title = item.get("title", "Product")
-                item_price = float(item.get("price", 0.0))
-                item_type = item.get("variant_title", "Standard")
+        st.markdown("### Select Items to Return")
+        items = target_order.get('items', [])
+        
+        return_selection = []
+        for i, item in enumerate(items):
+            is_selected = st.checkbox(f"Return: {item.get('name')} (Qty: {item.get('qty')} - ₹{item.get('mrp')})", key=f"ret_{i}")
+            if is_selected:
+                return_selection.append(item)
                 
-                is_returnable = st.checkbox(f"Return: {item_title} ({item_type}) - ₹{item_price:.2f}", key=f"ref_item_{idx}")
-                if is_returnable:
-                    total_refund_calc += item_price
-
-            st.info(f"**Auto-Calculated Refund Total:** ₹{total_refund_calc:.2f}")
-            reason = st.selectbox("Reason for Refund", ["Customer Dissatisfaction", "Frame Defect", "Wrong Size / Style", "Warranty Remake"])
-
-            if st.button("Confirm Itemized Refund"):
-                if total_refund_calc > 0:
-                    st.success(f"Successfully processed refund of ₹{total_refund_calc:.2f}. Frames restocked, custom lenses excluded from inventory.")
-                    st.balloons()
+        if return_selection:
+            st.markdown("---")
+            st.markdown("### 📋 Inventory Restock Assessment")
+            for item in return_selection:
+                item_type = item.get('type', 'frame').lower()
+                if item_type == 'lens' or 'lens' in item.get('name', '').lower():
+                    st.warning(f"⚠️ **{item.get('name')}**: Custom prescription lens detected. **Excluded from inventory restock** (written off per optical policy).")
                 else:
-                    st.error("Please select at least one item to return.")
-        else:
-            st.warning("Order ID not found in live ledger. Enter manual fallback details:")
-            manual_amt = st.number_input("Refund Amount in INR", min_value=0.0, value=0.0)
-            if st.button("Process Manual Refund"):
-                st.success(f"Processed manual refund of ₹{manual_amt:.2f}")
+                    st.info(f"✅ **{item.get('name')}**: Physical frame verified. **Will be restocked** back into active inventory.")
+            
+            refund_mode = st.selectbox("Refund Mode", ["Original Payment Method", "Store Credit", "Cash Refund"])
+            if st.button("Process Refund & Generate Credit Note", type="primary"):
+                st.balloons()
+                st.success(f"Refund successfully processed via {refund_mode}! Inventory adjustments recorded.")
+    elif order_id_input:
+        st.warning("Order ID not found in active ledgers.")
 
 # ==========================================
-# 4. DAY-END Z-REPORT TAB
+# MODULE 4: Z-REPORT & AUDIT
 # ==========================================
-elif app_mode == "Day-End Z-Report":
-    st.title("📊 Day-End Z-Report & Reconciliation")
+elif app_mode == "📊 Z-Report & Audit":
+    st.title("📊 Day-End Z-Report & Cash Drawer Reconciliation")
     
-    selected_report_date = st.date_input("Select Report Date", value=date(2026, 10, 6))
-    formatted_date_str = selected_report_date.strftime("%B %d, %Y")
+    selected_date = st.date_input("Select Z-Report Date", value=datetime.strptime("2026-10-06", "%Y-%m-%d").date())
     
-    st.caption(f"Active Reporting Date: {formatted_date_str}")
-
-    orders = client._get("/admin/api/2026-10/orders.json")
+    # Aggregate orders for selected date
+    sample_orders_path = os.path.join(DATA_DIR, "orders_sample.json")
+    report_orders = st.session_state.orders.copy()
+    if os.path.exists(sample_orders_path):
+        with open(sample_orders_path, "r", encoding="utf-8") as f:
+            report_orders.extend(json.load(f))
+            
+    date_str = selected_date.strftime("%Y-%m-%d")
+    matched_day_orders = [o for o in report_orders if date_str in str(o.get("created_at", ""))]
     
-    matched_orders_total = 0.0
-    order_count = 0
+    total_sales = sum(o.get("total_paid", 0.0) for o in matched_day_orders)
+    total_transactions = len(matched_day_orders)
     
-    if isinstance(orders, list):
-        for o in orders:
-            if isinstance(o, dict):
-                created_at_str = o.get("created_at", "")
-                try:
-                    order_date = datetime.fromisoformat(created_at_str).date()
-                    if order_date == selected_report_date:
-                        matched_orders_total += float(o.get("total_price", 0.0))
-                        order_count += 1
-                except Exception:
-                    pass
-
-    if order_count > 0:
-        total_cash_sales = round(matched_orders_total * 0.50, 2)
-        total_digital_sales = round(matched_orders_total * 0.50, 2)
-        gross_revenue = matched_orders_total
-    else:
-        total_cash_sales = 0.0
-        total_digital_sales = 0.0
-        gross_revenue = 0.0
-
-    opening_float = 5000.00
-    expected_drawer_cash = opening_float + total_cash_sales
-
-    st.write("### Store Shift Summary")
-    st.info(f"Found **{order_count}** orders totaling **₹{gross_revenue:,.2f}** recorded on {formatted_date_str}.")
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total Day Revenue", f"₹{total_sales:.2f}")
+    col2.metric("Total Transactions", total_transactions)
+    col3.metric("Average Basket Size", f"₹{(total_sales / total_transactions if total_transactions > 0 else 0):.2f}")
     
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Opening Float", f"₹{opening_float:,.2f}")
-    col2.metric("Total Cash Sales", f"₹{total_cash_sales:,.2f}")
-    col3.metric("Digital / UPI Sales", f"₹{total_digital_sales:,.2f}")
-    col4.metric("Gross Revenue", f"₹{gross_revenue:,.2f}")
-
-    st.divider()
-    st.write("### Cash Drawer Reconciliation")
+    st.markdown("---")
+    st.subheader("Cash Drawer Reconciliation")
     
-    counted_cash = st.number_input(
-        "Physically Counted Drawer Cash (INR):", 
-        min_value=0.0, 
-        value=float(expected_drawer_cash),
-        step=50.0
-    )
+    opening_float = 5000.0
+    cash_sales = sum(o.get("total_paid", 0.0) for o in matched_day_orders if o.get("payment_mode") == "Cash")
+    expected_drawer = opening_float + cash_sales
     
-    variance = counted_cash - expected_drawer_cash
-
+    rc1, rc2 = st.columns(2)
+    rc1.write(f"Opening Float: **₹{opening_float:.2f}**")
+    rc1.write(f"Cash Sales Collected: **₹{cash_sales:.2f}**")
+    rc1.write(f"**Expected Cash in Drawer: ₹{expected_drawer:.2f}**")
+    
+    actual_counted_cash = rc2.number_input("Physically Counted Drawer Cash (₹)", min_value=0.0, value=expected_drawer)
+    variance = actual_counted_cash - expected_drawer
+    
     if variance == 0:
-        st.success("Drawer Balanced Perfectly! No variance detected.")
-    elif variance < 0:
-        st.error(f"⚠️ Drawer Short by ₹{abs(variance):.2f}. Requires Manager Sign-off and reason code.")
+        rc2.success("Drawer Balanced Perfectly! ✅")
+    elif variance > 0:
+        rc2.info(f"Drawer is **OVER** by ₹{variance:.2f}")
     else:
-        st.warning(f"⚠️ Drawer Over by ₹{variance:.2f}. Check manual cash drop logs.")
-
-    if st.button("Finalize & Lock Day-End Z-Report"):
-        st.success(f"Z-Report for {formatted_date_str} successfully locked, timestamped, and submitted to store ledger.")
-        st.balloons()
+        rc2.error(f"Drawer is **SHORT** by ₹{abs(variance):.2f} (Manager Audit Required)")
