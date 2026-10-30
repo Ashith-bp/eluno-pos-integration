@@ -62,7 +62,6 @@ api_client = ElunoAPIClient()
 if "cart" not in st.session_state:
     st.session_state.cart = []
 if "orders" not in st.session_state:
-    # Load initial orders if available locally
     orders_path = os.path.join(DATA_DIR, "orders_sample.json")
     if os.path.exists(orders_path):
         with open(orders_path, "r", encoding="utf-8") as f:
@@ -102,34 +101,47 @@ if app_mode == "🛒 Cashier Checkout":
         active_rx = None
         
         if phone_input:
-            # Search customer by phone
-            matched_customers = [c for c in customers if phone_input in c.get("phone", "")]
+            # Search customer by phone (handling formatting variations)
+            clean_input = phone_input.strip()
+            matched_customers = [c for c in customers if clean_input in str(c.get("phone", ""))]
+            
             if matched_customers:
                 selected_customer = matched_customers[0]
                 st.success(f"Customer Found: **{selected_customer.get('name')}** (ID: {selected_customer.get('customer_id')})")
-                
-                # Automatically lookup active prescription
-                matched_rx = [rx for rx in prescriptions if str(rx.get("customer_id")) == str(selected_customer.get("customer_id")) or phone_input in rx.get("phone", "")]
-                if matched_rx:
-                    active_rx = matched_rx[0]
-                    st.info(f"👓 Active Prescription Found (`{active_rx.get('rx_id')}`) - Lens Validation Ready")
-                    
-                    rx_col1, rx_col2 = st.columns(2)
-                    with rx_col1:
-                        st.markdown("**Right Eye (OD)**")
-                        od = active_rx.get('od', {})
-                        st.write(f"Sph: {od.get('sph')} | Cyl: {od.get('cyl')} | Axis: {od.get('axis')}°")
-                    with rx_col2:
-                        st.markdown("**Left Eye (OS)**")
-                        os = active_rx.get('os', {})
-                        st.write(f"Sph: {os.get('sph')} | Cyl: {os.get('cyl')} | Axis: {os.get('axis')}°")
-                    
-                    pd = active_rx.get('pd', {})
-                    st.caption(f"PD: {pd.get('binocular')} mm | Valid Until: {active_rx.get('valid_until')}")
-                else:
-                    st.warning("⚠️ No active prescription found for this customer.")
             else:
-                st.warning("Customer not found. Walk-in mode active.")
+                st.info("Walk-in Customer / Creating new record profile...")
+            
+            # Match prescription by customer ID or phone number from prescriptions.json
+            matched_rx = []
+            for rx in prescriptions:
+                rx_phone = str(rx.get("phone", ""))
+                rx_cust_id = str(rx.get("customer_id", ""))
+                
+                # Check match against phone or customer ID if customer was found
+                phone_match = clean_input in rx_phone or rx_phone in clean_input
+                id_match = selected_customer and rx_cust_id == str(selected_customer.get("customer_id"))
+                
+                if phone_match or id_match:
+                    matched_rx.append(rx)
+            
+            if matched_rx:
+                active_rx = matched_rx[0]
+                st.info(f"👓 Active Prescription Found (`{active_rx.get('rx_id')}`) - Lens Validation Ready")
+                
+                rx_col1, rx_col2 = st.columns(2)
+                with rx_col1:
+                    st.markdown("**Right Eye (OD)**")
+                    od = active_rx.get('od', {})
+                    st.write(f"Sph: {od.get('sph')} | Cyl: {od.get('cyl')} | Axis: {od.get('axis')}°")
+                with rx_col2:
+                    st.markdown("**Left Eye (OS)**")
+                    os = active_rx.get('os', {})
+                    st.write(f"Sph: {os.get('sph')} | Cyl: {os.get('cyl')} | Axis: {os.get('axis')}°")
+                
+                pd = active_rx.get('pd', {})
+                st.caption(f"PD: {pd.get('binocular')} mm | Valid Until: {active_rx.get('valid_until')}")
+            else:
+                st.warning("⚠️ No active prescription found matching this phone number.")
 
         st.markdown("---")
         st.subheader("2. Add Products to Cart")
@@ -140,7 +152,6 @@ if app_mode == "🛒 Cashier Checkout":
         
         if product_options and st.button("Add to Cart"):
             prod = product_options[selected_prod_label]
-            # Check if already in cart
             existing_item = next((item for item in st.session_state.cart if item['sku'] == prod['sku']), None)
             if existing_item:
                 existing_item['qty'] += 1
@@ -172,7 +183,6 @@ if app_mode == "🛒 Cashier Checkout":
             
             st.markdown("---")
             
-            # Offers & Discounts
             st.markdown("**Offers & Discounts**")
             discount_type = st.selectbox("Apply Offer Slab", ["None", "Diwali 10% Off", "VIP 20% Off", "Flat ₹500 Off", "Custom Discount"])
             
@@ -192,7 +202,6 @@ if app_mode == "🛒 Cashier Checkout":
             
             # Inclusive GST Calculation (18% GST extracted from MRP)
             tax_amount = (final_payable * 0.18) / 1.18
-            net_taxable = final_payable - tax_amount
             
             st.write(f"Subtotal: ₹{subtotal:.2f}")
             if discount_amount > 0:
@@ -238,7 +247,6 @@ elif app_mode == "📦 Catalog & Stock":
             col1.write(f"**{p.get('name')}**\n\nSKU: `{p.get('sku')}` | Type: `{p.get('type', 'frame')}`")
             col2.write(f"MRP: **₹{p.get('mrp')}**")
             col3.write(f"Stock: **{p.get('stock', 10)} units**")
-            col4.badge("Active" if p.get('stock', 10) > 0 else "Out of Stock")
             st.divider()
 
 # ==========================================
@@ -251,7 +259,6 @@ elif app_mode == "🔄 Itemized Refunds":
     order_id_input = st.text_input("Search Order ID", placeholder="ORD-...")
     
     target_order = None
-    # Check session orders or sample json orders
     sample_orders_path = os.path.join(DATA_DIR, "orders_sample.json")
     all_known_orders = st.session_state.orders.copy()
     if os.path.exists(sample_orders_path):
@@ -301,7 +308,6 @@ elif app_mode == "📊 Z-Report & Audit":
     
     selected_date = st.date_input("Select Z-Report Date", value=datetime.strptime("2026-10-06", "%Y-%m-%d").date())
     
-    # Aggregate orders for selected date
     sample_orders_path = os.path.join(DATA_DIR, "orders_sample.json")
     report_orders = st.session_state.orders.copy()
     if os.path.exists(sample_orders_path):
