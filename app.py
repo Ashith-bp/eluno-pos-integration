@@ -118,11 +118,12 @@ elif menu == "New Sale Checkout":
         lenses = [p for p in products if p.get("product_type") == "Lens" or "Lens" in p.get("title")]
         if not lenses: lenses = products[min(1, len(products)-1):]
 
-        selected_frame = st.selectbox("Select Frame", frames, format_func=lambda x: x.get('title', 'Unnamed Frame') if isinstance(x, dict) else str(x))
-        frame_variant = selected_frame.get("variants", [{"id": "default", "price": "0"}])[0] if isinstance(selected_frame, dict) else {"id": "default", "price": "0"}
+        selected_frame = st.selectbox("Select Frame", frames, format_func=lambda x: x['title'])
+        frame_variant = selected_frame["variants"][0]
 
-        selected_lens = st.selectbox("Select Lens (Lens Matrix)", lenses, format_func=lambda x: x.get('title', 'Unnamed Lens') if isinstance(x, dict) else str(x))
-        lens_variant = selected_lens.get("variants", [{"id": "default", "price": "0"}])[0] if isinstance(selected_lens, dict) else {"id": "default", "price": "0"}
+        selected_lens = st.selectbox("Select Lens (Lens Matrix)", lenses, format_func=lambda x: x['title'])
+        lens_variant = selected_lens["variants"][0]
+
         # Validation check
         if prescription:
             try:
