@@ -256,7 +256,7 @@ if app_mode == "Cashier Checkout":
 # 2. CATALOG & STOCK TAB (ENHANCED GRID VIEW)
 # ==========================================
 elif app_mode == "Catalog & Stock":
-    st.title("📦 Product Catalog & Inventory Management")
+    st.title("📦 Product Catalog")
     
     f_col1, f_col2 = st.columns([2, 1])
     search_query = f_col1.text_input("🔍 Search products by name, brand, or SKU:", placeholder="e.g. Ray-Ban, Aviator, Lens")
